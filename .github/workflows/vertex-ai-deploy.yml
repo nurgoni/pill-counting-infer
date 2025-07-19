@@ -1,0 +1,63 @@
+name: Build and Deploy to Vertex AI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v0
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/my-app:${{ github.sha }} .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/my-app:${{ github.sha }}
+
+      - name: Deploy to Vertex AI
+        run: |
+          IMAGE_URI=${{ secrets.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/my-app:${{ github.sha }}
+          MODEL_NAME=my-model
+          ENDPOINT_ID=${{ secrets.ENDPOINT_ID }}
+
+          # Upload the model to Vertex AI
+          gcloud ai models upload \
+            --region=${{ secrets.REGION }} \
+            --display-name=$MODEL_NAME \
+            --container-image-uri=$IMAGE_URI \
+            --container-predict-route=/predict \
+            --container-health-route=/health
+
+          # Get the latest model ID
+          MODEL_ID=$(gcloud ai models list \
+            --region=${{ secrets.REGION }} \
+            --filter="displayName:$MODEL_NAME" \
+            --format="value(name)" \
+            --sort-by=~updateTime \
+            --limit=1)
+
+          # Deploy the model to the endpoint
+          gcloud ai endpoints deploy-model $ENDPOINT_ID \
+            --region=${{ secrets.REGION }} \
+            --model=$MODEL_ID \
+            --display-name=my-deployed-model \
+            --traffic-split=0=100
