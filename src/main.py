@@ -1,7 +1,10 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from onnxruntime import InferenceSession
 import numpy as np
 import cv2
+
+from pydantic import BaseModel # Import Pydantic
+import base64 # Import Base64
 
 from .utils import (
     preprocess_image, 
@@ -10,6 +13,9 @@ from .utils import (
 )
 
 
+class PredictionInput(BaseModel):
+    image_b64: str
+    
 app = FastAPI()
 model_path = "./model/best.onnx"
 session = InferenceSession(model_path, providers=["CPUExecutionProvider"])
@@ -21,10 +27,10 @@ def health_check():
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(data: PredictionInput):
     # Read and preprocess the image
-    image = await file.read()
-    image = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+    image_bytes = base64.b64decode(data.image_b64)
+    image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
 
     height, width, _ = image.shape
 
