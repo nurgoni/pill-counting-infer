@@ -4,21 +4,59 @@ on:
   push:
     branches:
       - dev
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: PILL_INFERENCE  # Add this line to specify environment
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Debug Secret Availability
+      - name: Debug Secrets and Environment
         run: |
-          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
-            echo "Error: GCP_SA_KEY secret is not set"
-            exit 1
+          echo "Checking environment..."
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+          echo "Testing secret availability..."
+          
+          # Test GCP_PROJECT_ID
+          if [ -n "${{ secrets.GCP_PROJECT_ID }}" ]; then
+            echo "✓ GCP_PROJECT_ID is set"
           else
-            echo "GCP_SA_KEY secret is available"
+            echo "✗ GCP_PROJECT_ID is missing"
+          fi
+          
+          # Test REGION
+          if [ -n "${{ secrets.REGION }}" ]; then
+            echo "✓ REGION is set"
+          else
+            echo "✗ REGION is missing"
+          fi
+          
+          # Test GCP_SA_KEY length
+          if [ -n "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "✓ GCP_SA_KEY is set"
+            echo "GCP_SA_KEY length: $(echo '${{ secrets.GCP_SA_KEY }}' | wc -c) characters"
+          else
+            echo "✗ GCP_SA_KEY is missing"
+          fi
+          
+          # Validate JSON format of GCP_SA_KEY
+          if echo '${{ secrets.GCP_SA_KEY }}' | jq . >/dev/null 2>&1; then
+            echo "✓ GCP_SA_KEY is valid JSON"
+          else
+            echo "✗ GCP_SA_KEY is not valid JSON"
+          fi
+          
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "Error: Required secrets are not set"
+            exit 1
           fi
 
       - name: Authenticate to Google Cloud
